@@ -127,6 +127,35 @@ fn decode_load(funct3: u32) -> CtrlWord {
         None => CtrlWord::default(),
     }
 }
+//执行load类
+
+pub fn exec_load(kind: LoadKind, dmem: &[u8], addr: u32) -> Option<u32> {
+    let a = addr as usize;   //将地址变成索引
+    match kind {
+        LoadKind::Lb => {
+            let b = *dmem.get(a)?;   //取dmem的第a的字节
+            Some((b as i8 as i32) as u32) // 加载字节，进行符号扩展
+        }
+        LoadKind::Lbu => {
+            let b = *dmem.get(a)?;
+            Some(b as u32) // 加载字节，无符号拓展，零扩展
+        }
+        LoadKind::Lh => {
+            let bytes = dmem.get(a..a + 2)?; //读两个字节符号拓展
+            let raw = u16::from_le_bytes([bytes[0], bytes[1]]);  //拼接字节
+            Some((raw as i16 as i32) as u32) // 符号扩展
+        }
+        LoadKind::Lhu => {
+            let bytes = dmem.get(a..a + 2)?;
+            let raw = u16::from_le_bytes([bytes[0], bytes[1]]);
+            Some(raw as u32) // 无符号拓展
+        }
+        LoadKind::Lw => {
+            let bytes = dmem.get(a..a + 4)?;//读四个字节（一个字）
+            Some(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+        }
+    }
+}
 
 //解码指令并生成控制信号，先进行大类指令区分，再针对 OP 指令进一步解码funct3和funct7
 pub fn decode(inst: u32) -> CtrlWord {
