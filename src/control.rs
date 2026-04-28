@@ -24,23 +24,41 @@ pub enum AluOp {
     And,
 }
 
+//load执行类
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoadKind {
+    Lb,
+    Lh,
+    Lw,
+    Lbu,
+    Lhu,
+}
+
+//store执行类
+pub enum Storeop {
+    SB,
+    SH,
+    SW,
+}
 /// 面向教学场景的最小控制字。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CtrlWord {
-    /// 允许写回寄存器堆。
+    // 允许写回寄存器堆。
     pub reg_write: bool,
-    /// 读取数据存储器。
+    // 读取数据存储器。
     pub mem_read: bool,
-    /// 写入数据存储器。
+    // 写入数据存储器。
     pub mem_write: bool,
-    /// ALU 第二操作数来自立即数。
+    // ALU 第二操作数来自立即数。
     pub alu_src_imm: bool,
-    /// 条件分支类指令。
+    // 条件分支类指令。
     pub branch: bool,
-    /// 无条件控制流跳转。
+    // 无条件控制流跳转。
     pub jump: bool,
-    /// ALU 功能选择。
+    // ALU 功能选择。
     pub alu_op: Option<AluOp>,
+    //load指令种类
+    pub load_kind: Option<LoadKind>, //store指令种类
 }
 
 /// 解码 OP(0x33) 大类：R-type 算术逻辑指令。
@@ -73,7 +91,7 @@ fn decode_op(funct3: u32, funct7: u32) -> CtrlWord {
 pub fn exec_alu(op: AluOp, a: u32, b: u32) -> u32 {
     let shamt = b & 0x1f;
     match op {
-        AluOp::Add => a.wrapping_add(b),       
+        AluOp::Add => a.wrapping_add(b),
         AluOp::Sub => a.wrapping_sub(b),
         AluOp::Sll => a << shamt,
         AluOp::Slt => ((a as i32) < (b as i32)) as u32,
@@ -86,6 +104,30 @@ pub fn exec_alu(op: AluOp, a: u32, b: u32) -> u32 {
     }
 }
 
+//解码load类
+fn decode_load(funct3: u32) -> CtrlWord {
+    let kind = match funct3 {
+        0b000 => Some(LoadKind::Lb),
+        0b001 => Some(LoadKind::Lh),
+        0b010 => Some(LoadKind::Lw),
+        0b100 => Some(LoadKind::Lbu),
+        0b101 => Some(LoadKind::Lhu),
+        _ => None,
+    };
+
+    match kind {
+        Some(k) => CtrlWord {
+            reg_write: true,
+            mem_read: true,
+            alu_src_imm: true,
+            alu_op: Some(AluOp::Add), // rs1 + imm 算地址
+            load_kind: Some(k),
+            ..Default::default()
+        },
+        None => CtrlWord::default(),
+    }
+}
+
 //解码指令并生成控制信号，先进行大类指令区分，再针对 OP 指令进一步解码funct3和funct7
 pub fn decode(inst: u32) -> CtrlWord {
     let opcode = inst & 0x7f;
@@ -93,14 +135,8 @@ pub fn decode(inst: u32) -> CtrlWord {
     let funct7 = (inst >> 25) & 0x7f;
 
     match opcode {
-        0x33 => decode_op(funct3, funct7), // OP
-        0x03 => CtrlWord {
-            reg_write: true,
-            mem_read: true,
-            alu_src_imm: true,
-            alu_op: Some(AluOp::Add),
-            ..Default::default()
-        }, // LOAD（当前按 lw 流程使用）
+        0x33 => decode_op(funct3, funct7), // OP大类
+        0x03 => decode_load(funct3),       // LOAD大类
         0x23 => CtrlWord {
             mem_write: true,
             alu_src_imm: true,
