@@ -181,6 +181,33 @@ fn decode_store(funct3: u32) -> CtrlWord {
     }
 }
 
+//执行store类
+pub fn exec_store(kind: Storekind, dmem: &mut [u8], addr: u32, val: u32) -> Option<()> {
+    let a = addr as usize;
+    match kind {
+        Storekind::SB => {
+            *dmem.get_mut(a)? = val as u8; // 写最低字节   //把val低8位写入内存相应地址
+            Some(())   //返回()表示操作成功
+        }
+        Storekind::SH => {
+            let bytes = dmem.get_mut(a..a + 2)?;   //截取内存2个字节 
+            let [lo, hi] = (val as u16).to_le_bytes();    //小端拆解存入lo,hi
+            bytes[0] = lo;
+            bytes[1] = hi;
+            Some(())
+        }
+        Storekind::SW => {
+            let bytes = dmem.get_mut(a..a + 4)?;
+            let [b0, b1, b2, b3] = val.to_le_bytes();
+            bytes[0] = b0;
+            bytes[1] = b1;
+            bytes[2] = b2;
+            bytes[3] = b3;
+            Some(())
+        }
+    }
+}
+
 //解码指令并生成控制信号，先进行大类指令区分，再针对 OP 指令进一步解码funct3和funct7
 pub fn decode(inst: u32) -> CtrlWord {
     let opcode = inst & 0x7f;
@@ -204,6 +231,7 @@ pub fn decode(inst: u32) -> CtrlWord {
         _ => CtrlWord::default(),
     }
 }
+//拆分二进制指令
 
 /// 提取 rd 字段 [11:7]。
 pub fn inst_rd(inst: u32) -> u8 {
