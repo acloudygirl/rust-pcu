@@ -1,4 +1,4 @@
-/// 选择下一条 PC 的来源。
+﻿/// 选择下一条 PC 的来源。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PcSel {
     /// 顺序执行：PC + 4。
@@ -35,7 +35,8 @@ pub enum LoadKind {
 }
 
 //store执行类
-pub enum Storeop {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Storekind {
     SB,
     SH,
     SW,
@@ -58,7 +59,9 @@ pub struct CtrlWord {
     // ALU 功能选择。
     pub alu_op: Option<AluOp>,
     //load指令种类
-    pub load_kind: Option<LoadKind>, //store指令种类
+    pub load_kind: Option<LoadKind>, 
+    //store指令种类
+    pub store_kind: Option<Storekind>,
 }
 
 /// 解码 OP(0x33) 大类：R-type 算术逻辑指令。
@@ -127,8 +130,8 @@ fn decode_load(funct3: u32) -> CtrlWord {
         None => CtrlWord::default(),
     }
 }
-//执行load类
 
+//执行load类
 pub fn exec_load(kind: LoadKind, dmem: &[u8], addr: u32) -> Option<u32> {
     let a = addr as usize;   //将地址变成索引
     match kind {
@@ -157,6 +160,27 @@ pub fn exec_load(kind: LoadKind, dmem: &[u8], addr: u32) -> Option<u32> {
     }
 }
 
+//解码store类
+fn decode_store(funct3: u32) -> CtrlWord {
+    let kind = match funct3 {
+        0b000 => Some(Storekind::SB),
+        0b001 => Some(Storekind::SH),
+        0b010 => Some(Storekind::SW),
+        _ => None,
+    };
+
+    match kind {
+        Some(k) => CtrlWord {
+            mem_write: true,
+            alu_src_imm: true,
+            alu_op: Some(AluOp::Add),
+            store_kind: Some(k),
+            ..Default::default()
+        },
+        None => CtrlWord::default(),
+    }
+}
+
 //解码指令并生成控制信号，先进行大类指令区分，再针对 OP 指令进一步解码funct3和funct7
 pub fn decode(inst: u32) -> CtrlWord {
     let opcode = inst & 0x7f;
@@ -166,12 +190,7 @@ pub fn decode(inst: u32) -> CtrlWord {
     match opcode {
         0x33 => decode_op(funct3, funct7), // OP大类
         0x03 => decode_load(funct3),       // LOAD大类
-        0x23 => CtrlWord {
-            mem_write: true,
-            alu_src_imm: true,
-            alu_op: Some(AluOp::Add),
-            ..Default::default()
-        }, // STORE（当前按 sw 流程使用）
+        0x23 => decode_store(funct3), // STORE大类
         0x63 => CtrlWord {
             branch: true,
             alu_op: Some(AluOp::Sub),
