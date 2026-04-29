@@ -41,6 +41,17 @@ pub enum Storekind {
     SH,
     SW,
 }
+
+//branch跳转类
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Branchkind {
+    BEQ,
+    BNE,
+    BLT,
+    BGE,
+    BLTU,
+    BGEU,
+}
 /// 面向教学场景的最小控制字。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CtrlWord {
@@ -62,6 +73,8 @@ pub struct CtrlWord {
     pub load_kind: Option<LoadKind>, 
     //store指令种类
     pub store_kind: Option<Storekind>,
+    //branch指令种类
+    pub branch_kind: Option<Branchkind>,
 }
 
 /// 解码 OP(0x33) 大类：R-type 算术逻辑指令。
@@ -208,6 +221,41 @@ pub fn exec_store(kind: Storekind, dmem: &mut [u8], addr: u32, val: u32) -> Opti
     }
 }
 
+//解码branch类
+fn decode_brach(funct3: u32) -> CtrlWord {
+    let kind = match funct3 {
+        0b000 => Some(Branchkind::BEQ),
+        0b001 => Some(Branchkind::BNE),
+        0b100 => Some(Branchkind::BLT),
+        0b101 => Some(Branchkind::BGE),
+        0b110 => Some(Branchkind::BLTU),
+        0b111 => Some(Branchkind::BGEU),
+        _ => None,
+    };
+
+    match kind {
+        Some(k) => CtrlWord {
+            branch: true,
+            alu_op: Some(AluOp::Sub),
+            branch_kind: Some(k),
+            ..Default::default()
+        },
+        None => CtrlWord::default(),
+    }
+}
+
+//执行branch类，返回是否跳转
+pub fn exec_branch(kind: Branchkind, rs1: u32, rs2: u32) -> bool {
+    match kind {
+        Branchkind::BEQ  => rs1 == rs2,
+        Branchkind::BNE  => rs1 != rs2,
+        Branchkind::BLT  => (rs1 as i32) < (rs2 as i32),
+        Branchkind::BGE  => (rs1 as i32) >= (rs2 as i32),
+        Branchkind::BLTU => rs1 < rs2,
+        Branchkind::BGEU => rs1 >= rs2,
+    }
+}
+
 //解码指令并生成控制信号，先进行大类指令区分，再针对 OP 指令进一步解码funct3和funct7
 pub fn decode(inst: u32) -> CtrlWord {
     let opcode = inst & 0x7f;
@@ -218,11 +266,7 @@ pub fn decode(inst: u32) -> CtrlWord {
         0x33 => decode_op(funct3, funct7), // OP大类
         0x03 => decode_load(funct3),       // LOAD大类
         0x23 => decode_store(funct3), // STORE大类
-        0x63 => CtrlWord {
-            branch: true,
-            alu_op: Some(AluOp::Sub),
-            ..Default::default()
-        }, // BRANCH（当前按 beq 流程使用）
+        0x63 => decode_brach(funct3), // BRANCH
         0x6f => CtrlWord {
             reg_write: true,
             jump: true,
@@ -231,8 +275,8 @@ pub fn decode(inst: u32) -> CtrlWord {
         _ => CtrlWord::default(),
     }
 }
-//拆分二进制指令
 
+/////拆分二进制指令
 /// 提取 rd 字段 [11:7]。
 pub fn inst_rd(inst: u32) -> u8 {
     ((inst >> 7) & 0x1f) as u8
