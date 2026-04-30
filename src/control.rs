@@ -256,6 +256,62 @@ pub fn exec_branch(kind: Branchkind, rs1: u32, rs2: u32) -> bool {
     }
 }
 
+//解码JAL类
+fn decode_jal() -> CtrlWord {
+    CtrlWord {
+        reg_write: true,
+        jump: true,
+        ..Default::default()
+    }
+}
+
+//提取JAL的J-type立即数，符号扩展到32位
+pub fn inst_jal_imm(inst: u32) -> u32 {
+    let imm20    = (inst >> 31) & 0x1;   // [31]    -> imm[20]
+    let imm10_1  = (inst >> 21) & 0x3ff; // [30:21] -> imm[10:1]
+    let imm11    = (inst >> 20) & 0x1;   // [20]    -> imm[11]
+    let imm19_12 = (inst >> 12) & 0xff;  // [19:12] -> imm[19:12]
+
+    let raw = (imm20 << 20) | (imm19_12 << 12) | (imm11 << 11) | (imm10_1 << 1);
+    // 符号扩展：imm20为符号位
+    ((raw as i32) << 11 >> 11) as u32
+}
+
+//执行JAL：返回 (跳转目标pc, 写回rd的返回地址)
+pub fn exec_jal(pc: u32, imm: u32) -> (u32, u32) {
+    let jump_target = pc.wrapping_add(imm);
+    let return_addr = pc.wrapping_add(4);
+    (jump_target, return_addr)
+}
+
+//解码JALR类（I-type，opcode=0x67，funct3必须为000）
+fn decode_jalr(funct3: u32) -> CtrlWord {
+    if funct3 == 0b000 {
+        CtrlWord {
+            reg_write: true,
+            alu_src_imm: true,
+            jump: true,
+            alu_op: Some(AluOp::Add), // rs1 + imm 算目标地址
+            ..Default::default()
+        }
+    } else {
+        CtrlWord::default()
+    }
+}
+
+//提取JALR的I-type立即数，符号扩展到32位
+pub fn inst_jalr_imm(inst: u32) -> u32 {
+    let raw = (inst >> 20) & 0xfff; // [31:20]
+    ((raw as i32) << 20 >> 20) as u32
+}
+
+//执行JALR：返回 (跳转目标pc, 写回rd的返回地址)
+pub fn exec_jalr(rs1: u32, imm: u32, pc: u32) -> (u32, u32) {
+    let jump_target = rs1.wrapping_add(imm) & !1; // 末位清零
+    let return_addr = pc.wrapping_add(4);
+    (jump_target, return_addr)
+}
+
 //解码指令并生成控制信号，先进行大类指令区分，再针对 OP 指令进一步解码funct3和funct7
 pub fn decode(inst: u32) -> CtrlWord {
     let opcode = inst & 0x7f;
@@ -266,12 +322,9 @@ pub fn decode(inst: u32) -> CtrlWord {
         0x33 => decode_op(funct3, funct7), // OP大类
         0x03 => decode_load(funct3),       // LOAD大类
         0x23 => decode_store(funct3), // STORE大类
-        0x63 => decode_brach(funct3), // BRANCH
-        0x6f => CtrlWord {
-            reg_write: true,
-            jump: true,
-            ..Default::default()
-        }, // JAL
+        0x63 => decode_brach(funct3), // BRANCH大类
+        0x6f => decode_jal(),         // JAL
+        0x67 => decode_jalr(funct3),  // JALR
         _ => CtrlWord::default(),
     }
 }
