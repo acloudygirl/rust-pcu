@@ -277,14 +277,14 @@ pub fn inst_jal_imm(inst: u32) -> u32 {
     ((raw as i32) << 11 >> 11) as u32
 }
 
-//执行JAL：返回 (跳转目标pc, 写回rd的返回地址)
+//执行JAL
 pub fn exec_jal(pc: u32, imm: u32) -> (u32, u32) {
     let jump_target = pc.wrapping_add(imm);
     let return_addr = pc.wrapping_add(4);
     (jump_target, return_addr)
 }
 
-//解码JALR类（I-type，opcode=0x67，funct3必须为000）
+//解码JALR类
 fn decode_jalr(funct3: u32) -> CtrlWord {
     if funct3 == 0b000 {
         CtrlWord {
@@ -305,11 +305,82 @@ pub fn inst_jalr_imm(inst: u32) -> u32 {
     ((raw as i32) << 20 >> 20) as u32
 }
 
-//执行JALR：返回 (跳转目标pc, 写回rd的返回地址)
+//执行JALR
 pub fn exec_jalr(rs1: u32, imm: u32, pc: u32) -> (u32, u32) {
     let jump_target = rs1.wrapping_add(imm) & !1; // 末位清零
     let return_addr = pc.wrapping_add(4);
     (jump_target, return_addr)
+}
+
+//解码OP-IMM类
+fn decode_op_imm(funct3: u32, funct7: u32) -> CtrlWord {
+    let alu_op = match funct3 {
+        0b000 => Some(AluOp::Add),
+        0b010 => Some(AluOp::Slt),
+        0b011 => Some(AluOp::Sltu),
+        0b100 => Some(AluOp::Xor),
+        0b110 => Some(AluOp::Or),
+        0b111 => Some(AluOp::And),
+        0b001 => Some(AluOp::Sll),
+        0b101 => match funct7 {
+            0b0000000 => Some(AluOp::Srl),
+            0b0100000 => Some(AluOp::Sra),
+            _ => None,
+        },
+        _ => None,
+    };
+
+    match alu_op {
+        Some(op) => CtrlWord {
+            reg_write: true,
+            alu_src_imm: true,
+            alu_op: Some(op),
+            ..Default::default()
+        },
+        None => CtrlWord::default(),
+    }
+}
+
+//提取I-type立即数，符号扩展到32位（LOAD/JALR/OP-IMM通用）
+pub fn inst_i_imm(inst: u32) -> u32 {
+    let raw = inst >> 20; // [31:20]
+    ((raw as i32) << 20 >> 20) as u32
+}
+
+//执行OP-IMM：复用exec_alu，ALU第二操作数换成立即数
+pub fn exec_op_imm(op: AluOp, rs1: u32, imm: u32) -> u32 {
+    exec_alu(op, rs1, imm)
+}
+
+//解码LUI类（U-type）
+fn decode_lui() -> CtrlWord {
+    CtrlWord {
+        reg_write: true,
+        ..Default::default()
+    }
+}
+
+//提取U-type立即数（高20位，低12位补零）
+pub fn inst_u_imm(inst: u32) -> u32 {
+    inst & 0xffff_f000
+}
+
+//执行LUI：直接把立即数写入rd
+pub fn exec_lui(imm: u32) -> u32 {
+    imm
+}
+
+//解码AUIPC类（U-type）
+fn decode_auipc() -> CtrlWord {
+    CtrlWord {
+        reg_write: true,
+        ..Default::default()
+    }
+}
+
+//执行AUIPC：pc + 立即数写入rd
+pub fn exec_auipc(pc: u32, imm: u32) -> u32 {
+    pc.wrapping_add(imm)
 }
 
 //解码指令并生成控制信号，先进行大类指令区分，再针对 OP 指令进一步解码funct3和funct7
@@ -319,12 +390,15 @@ pub fn decode(inst: u32) -> CtrlWord {
     let funct7 = (inst >> 25) & 0x7f;
 
     match opcode {
-        0x33 => decode_op(funct3, funct7), // OP大类
-        0x03 => decode_load(funct3),       // LOAD大类
-        0x23 => decode_store(funct3), // STORE大类
-        0x63 => decode_brach(funct3), // BRANCH大类
-        0x6f => decode_jal(),         // JAL
-        0x67 => decode_jalr(funct3),  // JALR
+        0x33 => decode_op(funct3, funct7),    // OP大类
+        0x13 => decode_op_imm(funct3, funct7), // OP-IMM大类
+        0x03 => decode_load(funct3),           // LOAD大类
+        0x23 => decode_store(funct3),          // STORE大类
+        0x63 => decode_brach(funct3),          // BRANCH大类
+        0x6f => decode_jal(),                  // JAL
+        0x67 => decode_jalr(funct3),           // JALR
+        0x37 => decode_lui(),                  // LUI
+        0x17 => decode_auipc(),                // AUIPC
         _ => CtrlWord::default(),
     }
 }
