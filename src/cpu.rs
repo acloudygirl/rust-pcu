@@ -2,7 +2,6 @@
 use crate::control::{
     decode, exec_alu, exec_auipc, exec_branch, exec_jal, exec_jalr, exec_load, exec_lui,
     exec_store, inst_i_imm, inst_jal_imm, inst_jalr_imm, inst_rd, inst_rs1, inst_rs2, inst_u_imm,
-
 };
 
 // 保留最核心的组成：
@@ -53,6 +52,8 @@ impl Cpu {
         let rs2 = inst_rs2(inst) as usize;
         let rd = inst_rd(inst) as usize;
         let opcode = inst & 0x7f;
+        let funct3 = (inst >> 12) & 0x7;
+        //let funct7 = (inst >> 25) & 0x7f;
 
         // 默认顺序执行下一条，若控制流指令发生重定向则覆盖
         let mut next_pc = self.pc.wrapping_add(4);
@@ -84,11 +85,9 @@ impl Cpu {
             0x03 => {
                 if let Some(kind) = c.load_kind {
                     let addr = self.regs[rs1].wrapping_add(inst_i_imm(inst));
-                    if rd != 0 && let Some(val) = exec_load(kind, &self.dmem, addr) {
-                        //发送错误信号
-                        if Some(val).is_none(){
-                            let p = 0;
-                        } 
+                    if rd != 0
+                        && let Some(val) = exec_load(kind, &self.dmem, addr)
+                    {
                         self.regs[rd] = val;
                     }
                 }
@@ -135,7 +134,7 @@ impl Cpu {
             }
 
             // JALR: rd = pc + 4; pc = (rs1 + imm) & !1
-            0x67 => {
+            0x67 if c.jump => {
                 let imm = inst_jalr_imm(inst); // 这里用 inst_i_imm(inst) 也可以
                 let (target, ret) = exec_jalr(self.regs[rs1], imm, self.pc);
                 if c.reg_write && rd != 0 {
@@ -155,8 +154,6 @@ impl Cpu {
         self.regs[0] = 0;
     }
 }
-
-
 
 /// 提取 S-type 立即数并符号扩展到 32 位
 fn inst_s_imm(inst: u32) -> u32 {
@@ -180,6 +177,18 @@ fn inst_b_imm(inst: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn run_jalr_with_funct3not0_and_clear_lsb() {
+        let jalr_x5_x1_0 = 0x0000_f2e7u32;
+        let mut cpu = Cpu::new(vec![jalr_x5_x1_0], 0);
+        cpu.regs[1] = 9; // 目标=9，执行后应清零最低位到 8
+
+        cpu.step();
+
+        assert_eq!(cpu.regs[5], 0); // 返回地址
+        assert_eq!(cpu.pc, 4); // (9 + 0) & !1
+    }
     #[test]
     fn step_runs_jal_and_writes_ra() {
         // jal x1, +8
@@ -189,7 +198,7 @@ mod tests {
         cpu.step();
 
         assert_eq!(cpu.regs[1], 4); // 返回地址
-        assert_eq!(cpu.pc, 8);      // 跳到 PC+8
+        assert_eq!(cpu.pc, 8); // 跳到 PC+8
     }
 
     #[test]
@@ -202,7 +211,7 @@ mod tests {
         cpu.step();
 
         assert_eq!(cpu.regs[5], 4); // 返回地址
-        assert_eq!(cpu.pc, 8);      // (9 + 0) & !1
+        assert_eq!(cpu.pc, 8); // (9 + 0) & !1
     }
 
     /// 辅助函数：编码一条 R-type OP 指令
