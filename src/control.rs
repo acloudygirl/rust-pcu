@@ -264,7 +264,6 @@ fn decode_jal() -> CtrlWord {
         ..Default::default()
     }
 }
-
 //提取JAL的J-type立即数，符号扩展到32位
 pub fn inst_jal_imm(inst: u32) -> u32 {
     let imm20    = (inst >> 31) & 0x1;   // [31]    -> imm[20]
@@ -276,7 +275,6 @@ pub fn inst_jal_imm(inst: u32) -> u32 {
     // 符号扩展：imm20为符号位
     ((raw as i32) << 11 >> 11) as u32
 }
-
 //执行JAL
 pub fn exec_jal(pc: u32, imm: u32) -> (u32, u32) {
     let jump_target = pc.wrapping_add(imm);

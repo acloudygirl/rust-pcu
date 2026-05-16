@@ -1,7 +1,10 @@
+// 先把这些也 import 进来
 use crate::control::{
-    decode, exec_alu, exec_auipc, exec_branch, exec_load, exec_lui, exec_store, inst_i_imm,
-    inst_rd, inst_rs1, inst_rs2, inst_u_imm,
+    decode, exec_alu, exec_auipc, exec_branch, exec_jal, exec_jalr, exec_load, exec_lui,
+    exec_store, inst_i_imm, inst_jal_imm, inst_jalr_imm, inst_rd, inst_rs1, inst_rs2, inst_u_imm,
+
 };
+
 // 保留最核心的组成：
 // pc 程序计数器
 // regs 32 个通用寄存器
@@ -82,6 +85,10 @@ impl Cpu {
                 if let Some(kind) = c.load_kind {
                     let addr = self.regs[rs1].wrapping_add(inst_i_imm(inst));
                     if rd != 0 && let Some(val) = exec_load(kind, &self.dmem, addr) {
+                        //发送错误信号
+                        if Some(val).is_none(){
+                            let p = 0;
+                        } 
                         self.regs[rd] = val;
                     }
                 }
@@ -117,6 +124,25 @@ impl Cpu {
                     }
                 }
             }
+            // JAL: rd = pc + 4; pc = pc + imm
+            0x6f => {
+                let imm = inst_jal_imm(inst);
+                let (target, ret) = exec_jal(self.pc, imm);
+                if c.reg_write && rd != 0 {
+                    self.regs[rd] = ret;
+                }
+                next_pc = target;
+            }
+
+            // JALR: rd = pc + 4; pc = (rs1 + imm) & !1
+            0x67 => {
+                let imm = inst_jalr_imm(inst); // 这里用 inst_i_imm(inst) 也可以
+                let (target, ret) = exec_jalr(self.regs[rs1], imm, self.pc);
+                if c.reg_write && rd != 0 {
+                    self.regs[rd] = ret;
+                }
+                next_pc = target;
+            }
 
             // 其它指令大类暂未接入
             _ => {}
@@ -129,6 +155,8 @@ impl Cpu {
         self.regs[0] = 0;
     }
 }
+
+
 
 /// 提取 S-type 立即数并符号扩展到 32 位
 fn inst_s_imm(inst: u32) -> u32 {
@@ -148,10 +176,34 @@ fn inst_b_imm(inst: u32) -> u32 {
     let raw = (imm12 << 12) | (imm11 << 11) | (imm10_5 << 5) | (imm4_1 << 1);
     ((raw as i32) << 19 >> 19) as u32
 }
-
+// 单元模块测试
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn step_runs_jal_and_writes_ra() {
+        // jal x1, +8
+        let jal_x1_plus8 = 0x0080_00efu32;
+        let mut cpu = Cpu::new(vec![jal_x1_plus8], 0);
+
+        cpu.step();
+
+        assert_eq!(cpu.regs[1], 4); // 返回地址
+        assert_eq!(cpu.pc, 8);      // 跳到 PC+8
+    }
+
+    #[test]
+    fn step_runs_jalr_and_clears_lsb() {
+        // jalr x5, x1, 0
+        let jalr_x5_x1_0 = 0x0000_82e7u32;
+        let mut cpu = Cpu::new(vec![jalr_x5_x1_0], 0);
+        cpu.regs[1] = 9; // 目标=9，执行后应清零最低位到 8
+
+        cpu.step();
+
+        assert_eq!(cpu.regs[5], 4); // 返回地址
+        assert_eq!(cpu.pc, 8);      // (9 + 0) & !1
+    }
 
     /// 辅助函数：编码一条 R-type OP 指令
     fn encode_op(funct7: u32, rs2: u32, rs1: u32, funct3: u32, rd: u32) -> u32 {
