@@ -178,7 +178,7 @@ fn inst_b_imm(inst: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    ///test调用函数：branch指令拼接
+    ///branch指令拼接
     fn encode_branch(rs1: u32,rs2: u32,funct3: u32,imm: u32) -> u32{
         let imm12 = (imm >> 12) & 0x1;
         let imm10_5 = (imm >> 5) & 0x3f;
@@ -192,6 +192,40 @@ mod tests {
         | (imm4_1 << 8)
         | (imm11 << 7)
         | 0x63
+    }
+    //lb指令拼接
+    fn encode_load(rd: u32, rs1: u32, funct3: u32, imm: u32) -> u32 {
+    ((imm & 0xfff) << 20)
+        | (rs1 << 15)
+        | (funct3 << 12)
+        | (rd << 7)
+        | 0x03
+    }
+    #[test]
+    ///检查lb时的符号拓展
+    fn step_runs_lb_sign_extend() {
+        let lb = encode_load(3, 1, 0b000, 0);
+        let mut cpu = Cpu::new(vec![lb], 8);
+
+        cpu.regs[1] = 0;
+        cpu.dmem[0] = 0xff;
+
+        cpu.step();
+
+        assert_eq!(cpu.regs[3], 0xffff_ffff);
+    }
+    #[test]
+    ///检查lbu时的零拓展
+    fn step_runs_lbu_sign_extend() {
+        let lbu = encode_load(3, 1, 0b100, 0);
+        let mut cpu = Cpu::new(vec![lbu], 8);
+
+        cpu.regs[1] = 0;
+        cpu.dmem[0] = 0xff;
+
+        cpu.step();
+
+        assert_eq!(cpu.regs[3], 0x0000_00ff);
     }
     #[test]
     fn step_runs_beq_taken() {
