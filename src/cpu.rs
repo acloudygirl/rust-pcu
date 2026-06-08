@@ -227,6 +227,34 @@ mod tests {
 
         assert_eq!(cpu.regs[3], 0x0000_00ff);
     }
+    ///检查lh的符号拓展
+    #[test]
+    fn step_runs_lh_sign_extend() {
+        let lh = encode_load(3, 1, 0b001, 0);
+        let mut cpu = Cpu::new(vec![lh], 16);
+
+        cpu.regs[1] = 0;
+        cpu.dmem[0] = 0xff;
+        cpu.dmem[1] = 0xff;
+
+        cpu.step();
+
+        assert_eq!(cpu.regs[3], 0xffff_ffff);
+    }
+    ///检查lhu的零拓展
+    #[test]
+    fn step_runs_lhu_zero_extend() {
+        let lhu = encode_load(3, 1, 0b101, 0);
+        let mut cpu = Cpu::new(vec![lhu], 16);
+
+        cpu.regs[1] = 0;
+        cpu.dmem[0] = 0xff;
+        cpu.dmem[1] = 0xff;
+
+        cpu.step();
+
+        assert_eq!(cpu.regs[3], 0x0000_ffff);
+    }
     #[test]
     fn step_runs_beq_taken() {
         let beq = encode_branch(1, 2, 0b000, 8);

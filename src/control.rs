@@ -556,7 +556,7 @@ mod tests {
 
     #[test]
     fn extract_reg_fields() {
-        let inst = 0b0000000_00101_00100_000_00011_0110011u32;
+        let inst = 0b0000_0000_0101_0010_0000_0001_1011_0011_u32;
         assert_eq!(inst_rd(inst), 3);
         assert_eq!(inst_rs1(inst), 4);
         assert_eq!(inst_rs2(inst), 5);
