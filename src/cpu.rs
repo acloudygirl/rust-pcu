@@ -179,27 +179,73 @@ fn inst_b_imm(inst: u32) -> u32 {
 mod tests {
     use super::*;
     ///branch指令拼接
-    fn encode_branch(rs1: u32,rs2: u32,funct3: u32,imm: u32) -> u32{
+    fn encode_branch(rs1: u32, rs2: u32, funct3: u32, imm: u32) -> u32 {
         let imm12 = (imm >> 12) & 0x1;
         let imm10_5 = (imm >> 5) & 0x3f;
         let imm4_1 = (imm >> 1) & 0xf;
         let imm11 = (imm >> 11) & 0x1;
         (imm12 << 31)
-        | (imm10_5 << 25)
-        | (rs2 << 20)
-        | (rs1 << 15)
-        | (funct3 << 12)
-        | (imm4_1 << 8)
-        | (imm11 << 7)
-        | 0x63
+            | (imm10_5 << 25)
+            | (rs2 << 20)
+            | (rs1 << 15)
+            | (funct3 << 12)
+            | (imm4_1 << 8)
+            | (imm11 << 7)
+            | 0x63
     }
-    //lb指令拼接
+    //load指令拼接
     fn encode_load(rd: u32, rs1: u32, funct3: u32, imm: u32) -> u32 {
-    ((imm & 0xfff) << 20)
-        | (rs1 << 15)
-        | (funct3 << 12)
-        | (rd << 7)
-        | 0x03
+        ((imm & 0xfff) << 20) | (rs1 << 15) | (funct3 << 12) | (rd << 7) | 0x03
+    }
+    //store指令拼接
+    fn encode_store(rs1: u32, rs2: u32, funct3: u32, imm: u32) -> u32 {
+        let imm11_5 = (imm >> 5) & 0x7f;
+        let imm4_0 = imm & 0x1f;
+
+        (imm11_5 << 25) | (rs2 << 20) | (rs1 << 15) | (funct3 << 12) | (imm4_0 << 7) | 0x23
+    }
+    #[test]
+    //检查sb低8位存放
+    fn step_runs_sb_store_low_byte() {
+        let sb = encode_store(1, 2, 0b000, 0);
+        let mut cpu = Cpu::new(vec![sb], 8);
+
+        cpu.regs[1] = 0;
+        cpu.regs[2] = 0x1234_5678;
+
+        cpu.step();
+
+        assert_eq!(cpu.dmem[0], 0x78);
+    }
+    #[test]
+    //检查sh低16位存放
+    fn step_runs_sh_store_low_byte() {
+        let sh = encode_store(1, 2, 0b001, 0);
+        let mut cpu = Cpu::new(vec![sh], 8);
+
+        cpu.regs[1] = 0;
+        cpu.regs[2] = 0x1234_5678;
+
+        cpu.step();
+
+        assert_eq!(cpu.dmem[0], 0x78);
+        assert_eq!(cpu.dmem[1], 0x56);
+    }
+    #[test]
+    //检查sw低32位存放
+    fn step_runs_sw_store_low_byte() {
+        let sw = encode_store(1, 2, 0b010, 0);
+        let mut cpu = Cpu::new(vec![sw], 16);
+
+        cpu.regs[1] = 0;
+        cpu.regs[2] = 0x1234_5678;
+
+        cpu.step();
+
+        assert_eq!(cpu.dmem[0], 0x78);
+        assert_eq!(cpu.dmem[1], 0x56);
+        assert_eq!(cpu.dmem[2], 0x34);
+        assert_eq!(cpu.dmem[3], 0x12);
     }
     #[test]
     ///检查lb时的符号拓展
@@ -303,7 +349,6 @@ mod tests {
         assert_eq!(cpu.regs[5], 0); // 返回地址
         assert_eq!(cpu.pc, 4); // (9 + 0) & !1
     }
-
 
     #[test]
     fn step_runs_jal_and_writes_ra() {
