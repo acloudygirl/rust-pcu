@@ -173,11 +173,63 @@ fn inst_b_imm(inst: u32) -> u32 {
     let raw = (imm12 << 12) | (imm11 << 11) | (imm10_5 << 5) | (imm4_1 << 1);
     ((raw as i32) << 19 >> 19) as u32
 }
+
 // 单元模块测试
 #[cfg(test)]
 mod tests {
     use super::*;
+    ///test调用函数：branch指令拼接
+    fn encode_branch(rs1: u32,rs2: u32,funct3: u32,imm: u32) -> u32{
+        let imm12 = (imm >> 12) & 0x1;
+        let imm10_5 = (imm >> 5) & 0x3f;
+        let imm4_1 = (imm >> 1) & 0xf;
+        let imm11 = (imm >> 11) & 0x1;
+        (imm12 << 31)
+        | (imm10_5 << 25)
+        | (rs2 << 20)
+        | (rs1 << 15)
+        | (funct3 << 12)
+        | (imm4_1 << 8)
+        | (imm11 << 7)
+        | 0x63
+    }
+    #[test]
+    fn step_runs_beq_taken() {
+        let beq = encode_branch(1, 2, 0b000, 8);
+        let mut cpu = Cpu::new(vec![beq], 0);
 
+        cpu.regs[1] = 7;
+        cpu.regs[2] = 7;
+
+        cpu.step();
+
+        assert_eq!(cpu.pc, 8);
+    }
+    #[test]
+    fn step_runs_beq_not_taken() {
+        let beq = encode_branch(1, 2, 0b000, 8);
+        let mut cpu = Cpu::new(vec![beq], 0);
+
+        cpu.regs[1] = 7;
+        cpu.regs[2] = 9;
+
+        cpu.step();
+
+        assert_eq!(cpu.pc, 4);
+    }
+    #[test]
+    fn step_runs_beq_taken_nagtive_imm() {
+        let beq = encode_branch(1, 2, 0b000, (-4i32) as u32);
+        let mut cpu = Cpu::new(vec![0, 0, 0, 0, beq], 0);
+        //因为需要PC=16，则用[0,0,0,0]当作指令占位数
+        cpu.pc = 16;
+        cpu.regs[1] = 7;
+        cpu.regs[2] = 7;
+
+        cpu.step();
+
+        assert_eq!(cpu.pc, 12);
+    }
     #[test]
     fn run_jalr_with_funct3not0_and_clear_lsb() {
         let jalr_x5_x1_0 = 0x0000_f2e7u32;
@@ -189,6 +241,8 @@ mod tests {
         assert_eq!(cpu.regs[5], 0); // 返回地址
         assert_eq!(cpu.pc, 4); // (9 + 0) & !1
     }
+
+
     #[test]
     fn step_runs_jal_and_writes_ra() {
         // jal x1, +8
